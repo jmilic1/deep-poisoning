@@ -135,7 +135,7 @@ def test(model, test_loader, poison_test=False, poison_transform=None, num_class
     with torch.no_grad():
         for data, target in test_loader:
 
-            data, target = data, target
+            data, target = data.cuda(), target.cuda()
             clean_output = model(data)
             clean_pred = clean_output.argmax(dim=1)
             clean_correct += clean_pred.eq(target).sum().item()
