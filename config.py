@@ -1,7 +1,3 @@
-import os
-import sys
-
-from utils import supervisor
 from utils import resnet
 
 
@@ -36,19 +32,3 @@ class Arguments:
             self.trigger_name = 'hellokitty_32.png'
         elif self.poison_type == 'badnet':
             self.trigger_name = 'badnet_patch.png'
-
-    def do_logging(self, dataset='cifar10'):
-        if self.log:
-            out_path = 'logs'
-            if not os.path.exists(out_path): os.mkdir(out_path)
-            out_path = os.path.join(out_path, '%s_seed=%s' % (dataset, self.seed))
-            if not os.path.exists(out_path): os.mkdir(out_path)
-            out_path = os.path.join(out_path, 'cleanse')
-            if not os.path.exists(out_path): os.mkdir(out_path)
-            out_path = os.path.join(out_path, '%s_%s.out' % (
-                self.cleanser,
-                supervisor.get_dir_core(self)))
-            fout = open(out_path, 'w')
-            ferr = open('/dev/null', 'a')
-            sys.stdout = fout
-            sys.stderr = ferr

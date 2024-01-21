@@ -1,4 +1,5 @@
 import os
+import sys
 
 import numpy as np
 import torch
@@ -156,3 +157,20 @@ def test(model, test_loader, poison_test=False, poison_transform=None, num_class
     if poison_test:
         return clean_correct / tot, poison_correct / num_non_target_class
     return clean_correct / tot, None
+
+
+def do_logging(args: config.Arguments):
+    if args.log:
+        out_path = 'logs'
+        if not os.path.exists(out_path): os.mkdir(out_path)
+        out_path = os.path.join(out_path, '%s_seed=%s' % (args.dataset, args.seed))
+        if not os.path.exists(out_path): os.mkdir(out_path)
+        out_path = os.path.join(out_path, 'cleanse')
+        if not os.path.exists(out_path): os.mkdir(out_path)
+        out_path = os.path.join(out_path, '%s_%s.out' % (
+            args.cleanser,
+            get_dir_core(args)))
+        fout = open(out_path, 'w')
+        ferr = open('/dev/null', 'a')
+        sys.stdout = fout
+        sys.stderr = ferr

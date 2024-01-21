@@ -14,12 +14,8 @@ from utils import supervisor, setup_seed
 from utils.setup_seed import IMG_Dataset
 
 
-def get_poison_transform(poison_type, target_class, trigger_transform=None,
-                         alpha=0.2, trigger_name=None):
+def get_poison_transform(args: config.Arguments, trigger_transform=None):
     # source class will be used for TaCT poison
-
-    if trigger_name is None:
-        trigger_name = config.trigger_default[poison_type]
 
     img_size = 32
 
@@ -36,11 +32,11 @@ def get_poison_transform(poison_type, target_class, trigger_transform=None,
             transforms.ToTensor()
         ])
 
-    if trigger_name != 'none':  # none for SIG
-        trigger_path = os.path.join('./triggers', trigger_name)
+    if args.trigger_name != 'none':  # none for SIG
+        trigger_path = os.path.join('./triggers', args.trigger_name)
         trigger = Image.open(trigger_path).convert("RGB")
 
-        trigger_mask_path = os.path.join('./triggers', 'mask_%s' % trigger_name)
+        trigger_mask_path = os.path.join('./triggers', 'mask_%s' % args.trigger_name)
 
         if os.path.exists(trigger_mask_path):  # if there explicitly exists a trigger mask (with the same name)
             trigger_mask = Image.open(trigger_mask_path).convert("RGB")
@@ -54,7 +50,7 @@ def get_poison_transform(poison_type, target_class, trigger_transform=None,
         trigger = trigger_transform(trigger)
         trigger_mask = trigger_mask
 
-    if poison_type == 'badnet':
+    if args.poison_type == 'badnet':
         def transform(data, labels):
             data = data.clone()
             labels = labels.clone()
@@ -64,23 +60,23 @@ def get_poison_transform(poison_type, target_class, trigger_transform=None,
             # transform clean samples to poison samples
             posx = img_size - dx
             posy = img_size - dy
-            labels[:] = target_class
+            labels[:] = args.target_class
             data[:, :, posx:, posy:] = trigger
             return data, labels
 
         return transform
 
-    elif poison_type == 'adaptive_blend':
+    elif args.poison_type == 'adaptive_blend':
         def transform(data, labels):
             data, labels = data.clone(), labels.clone()
-            data = data + alpha * (trigger - data)
-            labels[:] = target_class
+            data = data + args.alpha * (trigger - data)
+            labels[:] = args.target_class
 
             return data, labels
 
         return transform
 
-    elif poison_type == 'adaptive_patch':
+    elif args.poison_type == 'adaptive_patch':
         def transform(data, labels):
             img_size = 32
             target_class = 0
@@ -190,39 +186,12 @@ def test(model, test_loader, poison_test=False, poison_transform=None, num_class
 
 
 if __name__ == '__main__':
+    args = config.Arguments()
     log = False
-    dataset = 'cifar10'
-    poison_type = 'adaptive_blend'
-    poison_rate = 0.003
-    cover_rate = 0.003
-    alpha = 0.2
-    trigger = {'adaptive_blend': 'hellokitty_32.png',
-               'badnet': 'badnet_patch.png',
-               'adaptive_patch': [
-                   'phoenix_corner_32.png',
-                   'firefox_corner_32.png',
-                   'badnet_patch4_32.png',
-                   'trojan_square_32.png',
-               ],
-               }[poison_type]
-    seed = 100
 
-    setup_seed.setup_seed(seed)
+    setup_seed.setup_seed(args.seed)
     os.environ["CUDA_VISIBLE_DEVICES"] = "%s" % 0
-    if log:
-        out_path = 'logs'
-        if not os.path.exists(out_path): os.mkdir(out_path)
-        out_path = os.path.join(out_path, '%s_seed=%s' % (dataset, seed))
-        if not os.path.exists(out_path): os.mkdir(out_path)
-        out_path = os.path.join(out_path, 'base')
-        if not os.path.exists(out_path): os.mkdir(out_path)
-        out_path = os.path.join(out_path, '%s_%s.out' % (
-            supervisor.get_dir_core(dataset, poison_type, poison_rate, cover_rate, alpha, trigger, seed,
-                                    include_poison_seed=False), 'aug'))
-        fout = open(out_path, 'w')
-        ferr = open('/dev/null', 'a')
-        sys.stdout = fout
-        sys.stderr = ferr
+    supervisor.do_logging(args)
 
     data_transform_aug = transforms.Compose([
         transforms.RandomHorizontalFlip(),
@@ -239,7 +208,6 @@ if __name__ == '__main__':
     batch_size = 128
 
     num_classes = 10
-    arch = resnet.resnet20
     momentum = 0.9
     weight_decay = 1e-4
     epochs = 200
@@ -249,9 +217,7 @@ if __name__ == '__main__':
     kwargs = {'num_workers': 2, 'pin_memory': True}
 
     # Set Up Poisoned Set
-    poison_set_dir = supervisor.get_poison_set_dir(dataset, {
-        poison_type: supervisor.posionConfig(poison_rate, cover_rate, alpha, trigger)})[
-        poison_type]
+    poison_set_dir = supervisor.get_poison_set_dir(args)
 
     poisoned_set_img_dir = os.path.join(poison_set_dir, 'data')
     poisoned_set_label_path = os.path.join(poison_set_dir, 'labels')
@@ -272,7 +238,7 @@ if __name__ == '__main__':
     poison_indices = torch.tensor(torch.load(poison_indices_path))
 
     # Set Up Test Set for Debug & Evaluation
-    test_set_dir = os.path.join('clean_set', dataset, 'test_split')
+    test_set_dir = os.path.join('clean_set', args.dataset, 'test_split')
     test_set_img_dir = os.path.join(test_set_dir, 'data')
     test_set_label_path = os.path.join(test_set_dir, 'labels')
     test_set = IMG_Dataset(data_dir=test_set_img_dir,
@@ -282,18 +248,14 @@ if __name__ == '__main__':
         batch_size=batch_size, shuffle=True, **kwargs)
 
     # Poison Transform for Testing
-    poison_transform = get_poison_transform(poison_type=poison_type, target_class=0,
-                                            trigger_transform=data_transform,
-                                            alpha=alpha,
-                                            trigger_name=trigger, dataset=dataset)
+    poison_transform = get_poison_transform(args, trigger_transform=data_transform)
 
     # Train Code
-    model = arch(num_classes=num_classes)
+    model = args.arch(num_classes=num_classes)
     milestones = milestones.tolist()
     model = nn.DataParallel(model)
 
-    model_dir = supervisor.get_model_dir(dataset, poison_type, {
-        poison_type: supervisor.posionConfig(poison_rate, cover_rate, alpha, trigger)}, seed)
+    model_dir = supervisor.get_model_dir(args)
     print(f"Will save to '{model_dir}'.")
 
     if os.path.exists(model_dir):  # exit if there is an already trained model
@@ -306,7 +268,7 @@ if __name__ == '__main__':
 
     print(model_dir)
 
-    if poison_type == 'TaCT':
+    if args.poison_type == 'TaCT':
         source_classes = [1]
     else:
         source_classes = None
