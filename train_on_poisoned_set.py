@@ -47,7 +47,7 @@ def get_poison_transform(args: config.Arguments, trigger_transform=None):
             trigger_mask = torch.logical_or(torch.logical_or(trigger_map[0] > 0, trigger_map[1] > 0),
                                             trigger_map[2] > 0).float()
 
-        trigger = trigger_transform(trigger)
+        trigger = trigger_transform(trigger).cuda()
         trigger_mask = trigger_mask
 
     if args.poison_type == 'badnet':
@@ -235,7 +235,7 @@ if __name__ == '__main__':
         poisoned_set,
         batch_size=batch_size, shuffle=False, **kwargs)
 
-    poison_indices = torch.tensor(torch.load(poison_indices_path))
+    poison_indices = torch.tensor(torch.load(poison_indices_path)).cuda()
 
     # Set Up Test Set for Debug & Evaluation
     test_set_dir = os.path.join('clean_set', args.dataset, 'test_split')
@@ -254,6 +254,7 @@ if __name__ == '__main__':
     model = args.arch(num_classes=num_classes)
     milestones = milestones.tolist()
     model = nn.DataParallel(model)
+    model = model.cuda()
 
     model_dir = supervisor.get_model_dir(args)
     print(f"Will save to '{model_dir}'.")
@@ -262,7 +263,7 @@ if __name__ == '__main__':
         print(f"Model '{model_dir}' already exists!")
         exit(0)
 
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss().cuda()
     optimizer = torch.optim.SGD(model.parameters(), learning_rate, momentum=momentum, weight_decay=weight_decay)
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=milestones)
 
@@ -280,7 +281,7 @@ if __name__ == '__main__':
         labels = []
         for data, target in tqdm(poisoned_set_loader):
             optimizer.zero_grad()
-            data, target = data, target  # train set batch
+            data, target = data.cuda(), target.cuda()  # train set batch
             output = model(data)
             preds.append(output.argmax(dim=1))
             labels.append(target)

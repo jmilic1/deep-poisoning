@@ -17,7 +17,7 @@ class Arguments:
         self.model = None
         self.model_path = None
         self.no_normalize = False
-        self.devices = 0
+        self.devices = 1
         self.arch = resnet.resnet20
 
         # choices=['ABL']
